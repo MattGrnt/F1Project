@@ -1,0 +1,117 @@
+---
+Title: 'The troubles of giving policymakers constituency stats'
+project: 
+  type: website
+  output-dir: docs
+format: 
+  closeread-html:
+    cr-section:
+      layout: overlay-left
+mainfont: Poppins
+echo: false
+---
+
+```{r setup}
+#| warning: false
+library(leaflet)
+library(tidyverse)
+library(sf)
+```
+
+{{< lipsum 2 >}}
+
+::: cr-section
+::: {focus-on="cr-map"}
+Across the UK, there are 650 constituencies, one for each MP. And each MP always wants to know what is going on in their area.
+:::
+
+::: {#cr-map}
+```{r}
+UK_BUC <- read_sf("Shapefiles/Nations BUC") %>%
+ st_transform('WGS84')
+
+ggplot() +
+   geom_sf(
+    data = UK_BUC,
+    fill = '#00007e',
+    linewidth = 0.5,
+    colour = '#00007e',
+    show.legend = FALSE
+  ) + 
+  theme_void() + 
+  theme(plot.background = element_rect(fill ='transparent', colour = NA),
+        panel.background = element_rect(fill = 'transparent', colour = NA))
+ 
+```
+:::
+
+::: {focus-on="cr-map-2"}
+They aren't all the same size
+:::
+
+::: {#cr-map-2}
+```{r}
+Constituencies <- read_sf("Shapefiles/PCON 2024 BUC") %>%
+  st_transform('WGS84')
+
+ggplot() + 
+  geom_sf(
+    data = Constituencies,
+    fill = '#009cee',
+    linewidth = 0.2,
+    colour = '#ffffff',
+    show.legend = FALSE
+  ) + 
+  theme_void()
+  
+```
+:::
+
+::: {focus-on="cr-map-3"}
+Let's look at a single constituency.\
+\
+This is Stratford. @cr-map-3
+:::
+
+::: {#cr-map-3}
+```{r}
+ConstituenciesHQ <- read_sf("Shapefiles/PCON 2024 BGC") %>%
+  st_transform('WGS84')
+
+ggplot() + 
+  geom_sf(
+    data = filter(ConstituenciesHQ, PCON24CD == 'E14001525'),
+    fill = '#009cee',
+    linewidth = 0.2,
+    colour = '#ffffff',
+    show.legend = FALSE
+  ) + 
+  theme_void()
+```
+:::
+
+{{< lipsum 1 >}}
+:::
+
+{{< lipsum 2 >}}
+
+```{=html}
+<!-- some quick style customisation: see https://closeread.dev/guide/styling -->
+<style>
+  .cr-section.overlay-left {
+    background-color: #ffffff;
+  }
+
+  .cr-section.overlay-left .narrative-col .narrative {
+    font-size: 1em;
+    background-color: #FFFFFF;
+    opacity: 1;
+    color: #000000;
+    padding: 0.6em 0.8em;
+    border-radius: 0;
+    border: 2px solid #000000;
+    box-shadow: 4px 4px 0px 0px #e6e6e6;
+    backdrop-filter: blur(10px);
+  }
+</style>
+```
