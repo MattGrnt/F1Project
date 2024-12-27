@@ -8,7 +8,8 @@ website:
     left:
       - href: index.qmd
         text: Home
-      - Local Stats.qmd
+      - href: Local Stats.qmd
+        text: Local stats
       - about.qmd
 
 format:
