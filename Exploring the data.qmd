@@ -1,0 +1,83 @@
+---
+title: "Exploring the F1 data"
+---
+
+```{r setup}
+library(tidyverse, quietly = TRUE)
+library(plotly, quietly = TRUE)
+
+Constructors <- read_csv('data/constructors.csv') 
+ConstructorsResults <- read_csv(file = 'data/constructor_results.csv') %>%
+  left_join(select(Constructors, constructorId, name), by = 'constructorId')
+  
+Races <- read_csv('data/races.csv')
+ConstructorsResults <- left_join(ConstructorsResults, 
+                                 Races %>% select(raceId, year, round, name, date), 
+                                 by = 'raceId') 
+Constructors2024 <- ConstructorsResults %>%
+  filter(year > 2023) %>%
+  select(-c(constructorResultsId,
+            raceId, 
+            constructorId,
+            status)) %>%
+  rename(team = name.x,
+         race = name.y) %>%
+  select(round, date, race, team, points, year) %>%
+  arrange(round, desc(points))
+```
+
+# Team colours
+
+```{r}
+Mclaren_col     <- '#ff8000'
+Ferrari_col     <- '#e80020'
+RedBull_col     <- '#3671c6'
+Mercedes_col    <- '#27f4d2'
+AstonMartin_col <- '#229971'
+Alpine_col      <- '#ff36a1'
+Haas_col        <- '#ffffff'
+RB_col          <- '#6692ff'
+Williams_col    <- '#64c4ff'
+Kick_col        <- '#00e700'
+```
+
+# Results over the season
+
+```{r}
+Constructors2024 <- Constructors2024 %>%
+  group_by(team) %>%
+  mutate(standings = cumsum(points),
+         colour = case_when(team == 'Red Bull' ~ RedBull_col,
+                            team == 'Ferrari' ~ Ferrari_col,
+                            team == 'Mercedes' ~ Mercedes_col,
+                            team == 'McLaren' ~ Mclaren_col,
+                            team == 'Aston Martin' ~ AstonMartin_col,
+                            team == 'Sauber' ~ Kick_col,
+                            team == 'Haas F1 Team' ~ Haas_col,
+                            team == 'RB F1 Team' ~ RB_col,
+                            team == 'Williams' ~ Williams_col,
+                            team == 'Alpine F1 Team' ~ Alpine_col)) 
+
+Constr2024Season <- plot_ly(Constructors2024) 
+for (i in unique(Constructors2024$team)) {
+  team2024 <- Constructors2024 %>%
+    filter(team == i)
+  Constr2024Season <- Constr2024Season %>%
+    add_trace(data = team2024,
+              x = round,
+              y = ~standings,
+              line = list(color = team2024$colour[1]),
+              name = i,
+              type = 'scatter',
+              mode = 'lines'
+              )
+}
+Constr2024Season
+# add_trace(x = round, 
+#   y = ~standings,
+#   color = ~colour, #variable to split by, can also be color = 
+#   #line = list(color = ~), #if you want to set line formatting options
+#   type = 'scatter', 
+#   mode = 'lines') 
+  
+```

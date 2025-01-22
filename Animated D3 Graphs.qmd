@@ -1,0 +1,112 @@
+---
+title: "Animated D3 Graphs"
+---
+```{ojs}
+astronauts = FileAttachment("astronauts.json").json()
+
+import {addAnimation} from "@mkfreeman/plot-animation"
+```
+
+```{ojs}
+data = transpose(Constructors2024)
+
+// Animate this plot
+// (awaiting visibility on the page)
+viewof replay = Inputs.button("Replay");
+
+visibility().then(() =>
+  addAnimation(
+    Plot.line(data, { 
+      x: "round", 
+      y: "points", 
+      stroke: "team", 
+      strokeOpacity: 0.2// Initial opacity set to 0 (completely transparent)
+    }).plot({
+      color: {
+        domain: transpose(Constructors2024).map(d => d.team), // List of unique categories
+        range: transpose(Constructors2024).map(d => d.colour) // Corresponding colors
+      }
+    }),
+    { 
+      type: "path",       // Correct attribute for opacity
+      attribute: "stroke-opacity",
+      delay: 200,
+      replay              // Replay button for the animation
+    }
+  )
+);
+
+```
+
+
+
+```{r}
+#| output: false
+#| echo: false
+library(tidyverse, quietly = TRUE)
+library(gt)
+
+#list of all constructors
+Constructors <- read_csv('data/constructors.csv', show_col_types = FALSE) 
+
+#results by constructor
+ConstructorsResults <- read_csv(file = 'data/constructor_results.csv', show_col_types = FALSE) %>%
+  left_join(select(Constructors, constructorId, name), by = 'constructorId')
+
+#list of all races  
+Races <- read_csv('data/races.csv', show_col_types = FALSE)
+
+#add race info to constructors results
+ConstructorsResults <- left_join(ConstructorsResults, 
+                                 Races %>% select(raceId, year, round, name, date), 
+                                 by = 'raceId') 
+#Create list of 2024 results
+Constructors2024 <- ConstructorsResults %>%
+  filter(year > 2023) %>%
+  select(-c(constructorResultsId,
+            raceId, 
+            constructorId,
+            status)) %>%
+  rename(team = name.x,
+         race = name.y) %>%
+  select(round, date, race, team, points, year) %>%
+  arrange(round, desc(points)) %>%
+  group_by(team) 
+
+Mclaren_col     <- '#ff8000'
+Ferrari_col     <- '#e80020'
+RedBull_col     <- '#3671c6'
+Mercedes_col    <- '#27f4d2'
+AstonMartin_col <- '#229971'
+Alpine_col      <- '#ff36a1'
+Haas_col        <- '#ffffff'
+RB_col          <- '#6692ff'
+Williams_col    <- '#64c4ff'
+Kick_col        <- '#00e700'
+
+Constructors2024 <- Constructors2024 %>%
+  #create a standings column and assign team colours for use in visuals
+  mutate(standings = cumsum(points),
+         colour = case_when(team == 'Red Bull' ~ RedBull_col,
+                            team == 'Ferrari' ~ Ferrari_col,
+                            team == 'Mercedes' ~ Mercedes_col,
+                            team == 'McLaren' ~ Mclaren_col,
+                            team == 'Aston Martin' ~ AstonMartin_col,
+                            team == 'Sauber' ~ Kick_col,
+                            team == 'Haas F1 Team' ~ Haas_col,
+                            team == 'RB F1 Team' ~ RB_col,
+                            team == 'Williams' ~ Williams_col,
+                            team == 'Alpine F1 Team' ~ Alpine_col)) 
+ZeroConstruct <- Constructors2024 %>% filter(round == 1) %>%
+  mutate(race = 'Start',
+         round = 0,
+         points = 0,
+         standings = 0,
+         date = as.Date('2024-01-01'))
+ 
+Constructors2024 <- rbind(ZeroConstruct, Constructors2024) 
+
+write.csv(Constructors2024, 'Constructors2024.csv')
+
+ojs_define(Constructors2024 = Constructors2024 %>% select(round, standings, colour) %>% rename(points = standings))
+```

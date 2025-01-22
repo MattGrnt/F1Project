@@ -1,0 +1,418 @@
+---
+title: "Exploring OJS"
+format: 
+  closeread-html:
+    code-tools: true
+    cr-style:
+      narrative-background-color-overlay: "#111111dd"
+      narrative-text-color-overlay: white
+      narrative-background-color-sidebar: transparent
+      section-background-color: transparent
+---
+
+Since I'm more comfortable with R, I'll import and clean the data with R.
+
+I can then pass the data frame to `ojs` with `ojs_define()`
+
+```{r}
+#| output: false
+library(tidyverse, quietly = TRUE)
+library(gt)
+
+#list of all constructors
+Constructors <- read_csv('data/constructors.csv', show_col_types = FALSE) 
+
+#results by constructor
+ConstructorsResults <- read_csv(file = 'data/constructor_results.csv', show_col_types = FALSE) %>%
+  left_join(select(Constructors, constructorId, name), by = 'constructorId')
+
+#list of all races  
+Races <- read_csv('data/races.csv', show_col_types = FALSE)
+
+#add race info to constructors results
+ConstructorsResults <- left_join(ConstructorsResults, 
+                                 Races %>% select(raceId, year, round, name, date), 
+                                 by = 'raceId') 
+#Create list of 2024 results
+Constructors2024 <- ConstructorsResults %>%
+  filter(year > 2023) %>%
+  select(-c(constructorResultsId,
+            raceId, 
+            constructorId,
+            status)) %>%
+  rename(team = name.x,
+         race = name.y) %>%
+  select(round, date, race, team, points, year) %>%
+  arrange(round, desc(points)) %>%
+  group_by(team) 
+
+Mclaren_col     <- '#ff8000'
+Ferrari_col     <- '#e80020'
+RedBull_col     <- '#3671c6'
+Mercedes_col    <- '#27f4d2'
+AstonMartin_col <- '#229971'
+Alpine_col      <- '#ff36a1'
+Haas_col        <- '#ffffff'
+RB_col          <- '#6692ff'
+Williams_col    <- '#64c4ff'
+Kick_col        <- '#00e700'
+
+Constructors2024 <- Constructors2024 %>%
+  #create a standings column and assign team colours for use in visuals
+  mutate(standings = cumsum(points),
+         colour = case_when(team == 'Red Bull' ~ RedBull_col,
+                            team == 'Ferrari' ~ Ferrari_col,
+                            team == 'Mercedes' ~ Mercedes_col,
+                            team == 'McLaren' ~ Mclaren_col,
+                            team == 'Aston Martin' ~ AstonMartin_col,
+                            team == 'Sauber' ~ Kick_col,
+                            team == 'Haas F1 Team' ~ Haas_col,
+                            team == 'RB F1 Team' ~ RB_col,
+                            team == 'Williams' ~ Williams_col,
+                            team == 'Alpine F1 Team' ~ Alpine_col)) 
+ZeroConstruct <- Constructors2024 %>% filter(round == 1) %>%
+  mutate(race = 'Start',
+         round = 0,
+         points = 0,
+         standings = 0,
+         date = as.Date('2024-01-01'))
+ 
+Constructors2024 <- rbind(ZeroConstruct, Constructors2024) 
+
+ojs_define(Constructors2024 = Constructors2024 %>% select(round, standings, colour) %>% rename(points = standings))
+ojs_define(Constructors = Constructors2024 %>% select(round, standings, team,  colour))
+```
+
+`ojs` doesn't use column structured data, but row structured data. To help with this, I've only passed a few columns to the `ojs` variable, and then used `transpose()` to pivot them into the correct format
+
+Now I can build a chart with this data.
+
+I've created a `color` object that lets me control the legend for the graph.
+
+```{ojs}
+
+firstData = transpose(Constructors2024)
+
+ Plot.plot({
+    color: {
+      legend: true,
+      className: "chart-legend",
+      domain: transpose(Constructors2024).map(d => d.team), // List of unique categories
+      range: transpose(Constructors2024).map(d => d.colour), // Corresponding colors for each category
+      legendPosition: "top-right", // Position of the legend
+      rows: 2, // Layout: Arrange the legend into 2 rows
+      columns: 5,
+      swatchWidth: 25,
+    },
+    style: {
+      font: "14px Poppins", // Axis labels, title, etc.
+    },
+    x: {
+      domain: [0, 12], // Set the x-axis range
+    },
+    y: {
+      domain: [0, 350], // Set the y-axis range
+    },
+    marks: [
+      Plot.line(firstData, {
+        x: "round", // x-axis row
+        y: "points", // y-axis row
+        stroke: "team", // Use the category for stroke color
+        tip: true, // Enable tooltips
+      }),
+    ],
+  });
+```
+
+To style the legend I need to use some CSS:
+
+```{=html}
+<style>
+.chart-legend-swatch-label {
+  font-size: 16px;
+  font-family: Poppins;
+  font-weight: 400;
+}
+</style>
+```
+Now I want to do the same graph, but draw it while we scroll...
+
+```{ojs}
+//|eval: false
+angleScale2 = d3.scaleLinear()
+  .domain([0, 12.1])
+  .range([0, 12])
+  .clamp(true)
+
+rounds = angleScale2(
+  (crTriggerIndex != null ? crTriggerIndex : -1)
+    + crTriggerProgress)
+```
+
+::: cr-section
+::: {#cr-graphic}
+```{ojs}
+//| eval: false
+//| echo: false
+d3 = require("d3@7")
+
+reactive_data = transpose(Constructors2024)
+
+rounds = angle2;
+
+viewof reactiveChart = {
+  const chart = Plot.plot({
+    color: {
+      legend: true,
+      className: "chart-legend",
+      domain: transpose(Constructors2024).map(d => d.team), // List of unique categories
+      range: transpose(Constructors2024).map(d => d.colour), // Corresponding colors for each category
+      legendPosition: "top-right", // Position of the legend
+      rows: 2, // Layout: Arrange the legend into 2 rows
+      columns: 5,
+      swatchWidth: 25,
+    },
+    style: {
+      font: "14px Poppins", // Axis labels, title, etc.
+    },
+    x: {
+      domain: [0, 12], // Set the x-axis range
+    },
+    y: {
+      domain: [0, 350], // Set the y-axis range
+    },
+    marks: [
+      Plot.line(reactive_data.filter(d => d.round <= rounds), {
+        x: "round", // x-axis row
+        y: "points", // y-axis row
+        stroke: "team", // Use the category for stroke color
+        tip: true, // Enable tooltips
+      }),
+    ],
+  });
+
+  // Apply D3 transitions after the chart is rendered
+  requestAnimationFrame(() => {
+    const svg = d3.select(chart).select("svg"); // Select the SVG of the plot
+
+    // Check if paths exist and print their count
+    const paths = svg.selectAll("path").nodes();
+    console.log("Number of path elements:", paths.length);
+
+    if (paths.length === 0) {
+      console.warn("No path elements found. Verify that the lines were rendered correctly.");
+      return; // Exit if no paths are found
+    }
+
+    // Apply the animation to all path elements
+    svg
+      .selectAll("path")
+      .attr("stroke-dasharray", function () {
+        const totalLength = this.getTotalLength(); // Get the total length of the path
+        return `0, ${totalLength}`; // Start with the line hidden
+      })
+      .transition()
+      .duration(2000) // Duration of the transition (2 seconds)
+      .attr("stroke-dasharray", function () {
+        const totalLength = this.getTotalLength(); // Get the total length of the path
+        return `${totalLength}, 0`; // Animate the line being drawn
+      });
+  });
+
+  return chart; // Return the rendered chart
+}
+
+
+```
+
+```{ojs}
+//| echo: false
+
+d3 = require("d3@7")
+
+data = transpose(Constructors)
+
+angleScale2 = d3.scaleLinear()
+  .domain([0, 12.1])
+  .range([0, 12])
+  .clamp(true)
+
+rounds = angleScale2(
+  (crTriggerIndex != null ? crTriggerIndex : -1)
+    + crTriggerProgress)
+
+function drawChart(data, rounds) {
+  // define the graph height and width
+  const height = 500;
+  const width = 900;
+  // define the margins
+  const margin = ({top: 20, right: 20, bottom: 30, left: 40});
+  
+  // Set the position of the x axis 
+  const x = d3.scaleLinear() // choose a scale
+  .domain(d3.extent(data, d => d.round)) // set the domain, d3.extent pulls the min and max, so here we pull the min and max of round from data
+  .range([margin.left, width - margin.right]); // set the range, the physical start and end of the axis. We can use the graph size and margins to do this
+  
+  const y = d3.scaleLinear()
+  .domain(d3.extent(data, d => d.standings))
+  .range([height-margin.bottom, margin.top]);
+  
+  // Declare the line generator.
+  const line = d3.line()
+    .x(d => x(d.round))
+    .y(d => y(d.standings));  
+  
+  //create the svg that will hold the chart
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", [0,0, width, height])
+    .attr("style", "max-width: 100%, height: auto; height: intrinsic;"); //some css for the svg
+  
+  //add the x-axis to the svg  
+  svg.append("g") 
+    .attr("transform", `translate(0, ${height - margin.bottom})`)
+    .call(d3.axisBottom(x).ticks(width/80).tickSizeOuter(0))
+    .call(g => g.select(".domain").remove());
+  
+// Add the y-axis, remove the domain line, add grid lines and a label
+  svg.append("g")
+      .attr("transform", `translate(${margin.left},0)`)
+      .call(d3.axisLeft(y)
+        .ticks((y.domain()[1] - y.domain()[0]) / 50))
+      .call(g => g.select(".domain").remove())
+      .call(g => g.selectAll(".tick line").clone()
+      .attr("x2", width - margin.left - margin.right)
+      .attr("stroke-opacity", 0.1))
+      .call(g => g.append("text")
+      .attr("x", -margin.left)
+      .attr("y", 10)
+      .attr("fill", "currentColor")
+      .attr("text-anchor", "start")
+      .text("↑ Points"));  
+  
+  const groupedData = d3.groups(data, d => d.team)
+    .filter(([team, group]) => group.some(d => d.round <= rounds));
+    
+  // Append a path for the line. Since I have grouped data, this will be done with a for
+  groupedData.forEach(([team, group]) => {
+   const path = svg.append("path")
+    .datum(group)
+    .attr("fill", "none")
+    .attr("stroke", group[0].colour) 
+    .attr("stroke-width", 1.5)
+    .attr("d", line);
+
+  // Ensure the path is part of the DOM before animating
+  const totalLength = path.node().getTotalLength();
+
+  path
+    .attr("stroke-dasharray", totalLength)
+    .attr("stroke-dashoffset", totalLength)
+    .transition() // Start the transition
+    .delay(200)
+    .duration(1000) // Duration of 1 second
+    .ease(d3.easeCubicInOut) // Smooth easing function
+    .attr("stroke-dashoffset", 0); // Reveal the path gradually
+  }); 
+  
+  return svg.node();
+  
+}
+
+visibility().then(() => {
+  // Call drawChart with the latest rounds value whenever visibility is ensured
+  drawChart(data, rounds);
+});
+
+```
+
+:::
+
+::: progress-block
+::: {focus-on="cr-graphic"}
+## Round 0
+
+After a dominant 2023 season from Red Bull, everyone hoped for a change in the pecking order.
+
+```{r}
+Round <- function(round_no) {
+  Round <- Constructors2024 %>% 
+    ungroup() %>% 
+    filter(round == round_no) %>% 
+    select(team, points, standings) %>% 
+    mutate(points = paste('+', points), 
+           position = row_number())
+  gt(Round, rowname_col = 'position')
+}
+
+GPName <- function(roundNo) {
+  paste0(Constructors2024[Constructors2024$round == roundNo,]$race[roundNo])
+}
+```
+:::
+
+::: {focus-on="cr-graphic"}
+## Round 1 - `r GPName(1)`
+
+The `r GPName(1)` didn't look like a promising start...
+
+`r Round(1)`
+:::
+
+::: {focus-on="cr-graphic"}
+# Round 2 - `r GPName(2)`
+
+`r Round(2)`
+:::
+
+::: {focus-on="'cr-graphic'"}
+## Round 3 - `r GPName(3)`
+
+After qualifying on pole, Verstappen looked likely to take a record-equalling 10th victory in a row.
+
+However, car problems lead to a surprise retirement on lap 5, opening the door to a 1-2 finish from Ferrari.
+
+`r Round(3)`
+:::
+
+Round 4 @cr-graphic
+
+Round 5 @cr-graphic
+
+Round 6 @cr-graphic
+
+Round 7 @cr-graphic
+
+Round 8 @cr-graphic
+
+Round 9 @cr-graphic
+
+Round 10 @cr-graphic
+
+Round 11 @cr-graphic
+
+Round 12 @cr-graphic
+:::
+:::
+
+```{=html}
+<!-- some quick style customisation: see https://closeread.dev/guide/styling -->
+<style>
+  .cr-section.overlay-left {
+    background-color: #ffffff;
+  }
+
+  .cr-section.overlay-left .narrative-col .narrative {
+    font-size: 1em;
+    background-color: #FFFFFF;
+    opacity: 1;
+    color: #000000;
+    padding: 0.6em 0.8em;
+    border-radius: 0;
+    border: 2px solid #000000;
+    box-shadow: 4px 4px 0px 0px #e6e6e6;
+    backdrop-filter: blur(10px);
+  }
+</style>
+```

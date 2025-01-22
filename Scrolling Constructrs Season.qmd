@@ -1,0 +1,281 @@
+---
+title: "Exploring OJS"
+format: 
+  closeread-html:
+    code-tools: true
+    cr-style:
+      narrative-background-color-overlay: "#111111dd"
+      narrative-text-color-overlay: white
+      narrative-background-color-sidebar: transparent
+      section-background-color: transparent
+---
+
+Since I'm more comfortable with R, I'll import and clean the data with R.
+
+I can then pass the data frame to `ojs` with `ojs_define()`
+
+```{r}
+#| output: false
+library(tidyverse, quietly = TRUE)
+library(gt)
+
+#list of all constructors
+Constructors <- read_csv('data/constructors.csv', show_col_types = FALSE) 
+
+#results by constructor
+ConstructorsResults <- read_csv(file = 'data/constructor_results.csv', show_col_types = FALSE) %>%
+  left_join(select(Constructors, constructorId, name), by = 'constructorId')
+
+#list of all races  
+Races <- read_csv('data/races.csv', show_col_types = FALSE)
+
+#add race info to constructors results
+ConstructorsResults <- left_join(ConstructorsResults, 
+                                 Races %>% select(raceId, year, round, name, date), 
+                                 by = 'raceId') 
+#Create list of 2024 results
+Constructors2024 <- ConstructorsResults %>%
+  filter(year > 2023) %>%
+  select(-c(constructorResultsId,
+            raceId, 
+            constructorId,
+            status)) %>%
+  rename(team = name.x,
+         race = name.y) %>%
+  select(round, date, race, team, points, year) %>%
+  arrange(round, desc(points)) %>%
+  group_by(team) 
+
+Mclaren_col     <- '#ff8000'
+Ferrari_col     <- '#e80020'
+RedBull_col     <- '#3671c6'
+Mercedes_col    <- '#27f4d2'
+AstonMartin_col <- '#229971'
+Alpine_col      <- '#ff36a1'
+Haas_col        <- '#ffffff'
+RB_col          <- '#6692ff'
+Williams_col    <- '#64c4ff'
+Kick_col        <- '#00e700'
+
+Constructors2024 <- Constructors2024 %>%
+  #create a standings column and assign team colours for use in visuals
+  mutate(standings = cumsum(points),
+         colour = case_when(team == 'Red Bull' ~ RedBull_col,
+                            team == 'Ferrari' ~ Ferrari_col,
+                            team == 'Mercedes' ~ Mercedes_col,
+                            team == 'McLaren' ~ Mclaren_col,
+                            team == 'Aston Martin' ~ AstonMartin_col,
+                            team == 'Sauber' ~ Kick_col,
+                            team == 'Haas F1 Team' ~ Haas_col,
+                            team == 'RB F1 Team' ~ RB_col,
+                            team == 'Williams' ~ Williams_col,
+                            team == 'Alpine F1 Team' ~ Alpine_col)) 
+ZeroConstruct <- Constructors2024 %>% filter(round == 1) %>%
+  mutate(race = 'Start',
+         round = 0,
+         points = 0,
+         standings = 0,
+         date = as.Date('2024-01-01'))
+ 
+Constructors2024 <- rbind(ZeroConstruct, Constructors2024) 
+
+ojs_define(Constructors2024 = Constructors2024 %>% select(round, standings, colour) %>% rename(points = standings))
+ojs_define(Constructors = Constructors2024 %>% select(round, standings, team,  colour))
+```
+
+
+::: cr-section
+::: {#cr-graphic}
+```{ojs}
+//| echo: false
+d3 = require("d3@7")
+
+data = transpose(Constructors)
+
+angleScale2 = d3.scaleLinear()
+  .domain([0, 12.1])
+  .range([0, 12])
+  .clamp(true)
+
+rounds = angleScale2(
+  (crTriggerIndex != null ? crTriggerIndex : -1)
+  + crTriggerProgress
+)
+
+// Cell that calculates the previous rounds value
+previousRounds = {
+  const prev = rounds - 1;  // Track the previous round value
+  return prev < 0 ? 0 : prev;  // Prevent negative round values
+}
+
+function drawChart(data, rounds, previousRounds) {
+  // Define the graph height and width
+  const height = 500;
+  const width = 900;
+  // Define the margins
+  const margin = ({top: 20, right: 20, bottom: 30, left: 40});
+
+  // Set the position of the x axis 
+  const x = d3.scaleLinear() 
+    .domain(d3.extent(data, d => d.round))
+    .range([margin.left, width - margin.right]);
+
+  const y = d3.scaleLinear()
+    .domain(d3.extent(data, d => d.standings))
+    .range([height-margin.bottom, margin.top]);
+
+  // Declare the line generator
+  const line = d3.line()
+    .x(d => x(d.round))
+    .y(d => y(d.standings));  
+
+  // Create the svg element
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", [0, 0, width, height])
+    .attr("style", "max-width: 100%, height: auto; height: intrinsic;");
+
+  // Add the x-axis to the svg  
+  svg.append("g") 
+    .attr("transform", `translate(0, ${height - margin.bottom})`)
+    .call(d3.axisBottom(x).ticks(width/80).tickSizeOuter(0))
+    .call(g => g.select(".domain").remove());
+
+  // Add the y-axis, remove the domain line, add grid lines, and label
+  svg.append("g")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(d3.axisLeft(y)
+      .ticks((y.domain()[1] - y.domain()[0]) / 50))
+    .call(g => g.select(".domain").remove())
+    .call(g => g.selectAll(".tick line").clone()
+      .attr("x2", width - margin.left - margin.right)
+      .attr("stroke-opacity", 0.1))
+    .call(g => g.append("text")
+      .attr("x", -margin.left)
+      .attr("y", 10)
+      .attr("fill", "currentColor")
+      .attr("text-anchor", "start")
+      .text("↑ Points"));  
+
+  // Group data by team and filter based on rounds
+  const groupedData = d3.groups(data, d => d.team)
+    .filter(([team, group]) => group.some(d => d.round <= rounds));
+
+   // Append new paths for each team
+  groupedData.forEach(([team, group]) => {
+    const path = svg.append("path")
+      .datum(group)
+      .attr("fill", "none")
+      .attr("stroke", group[0].colour)
+      .attr("stroke-width", 1.5)
+      .attr("d", line);
+
+    // If rounds have increased, animate the path
+    if (rounds > previousRounds) {
+      const totalLength = path.node().getTotalLength();
+
+      path
+        .attr("stroke-dasharray", totalLength)
+        .attr("stroke-dashoffset", totalLength)
+        .transition() // Start the transition
+        .delay(200)
+        .duration(1000) // Duration of 1 second
+        .ease(d3.easeCubicInOut) // Smooth easing function
+        .attr("stroke-dashoffset", 0); // Reveal the path gradually
+    }
+  });
+
+  return svg.node();
+}
+```
+
+:::
+
+::: progress-block
+::: {focus-on="cr-graphic"}
+## Round 0
+
+After a dominant 2023 season from Red Bull, everyone hoped for a change in the pecking order.
+
+```{r}
+Round <- function(round_no) {
+  Round <- Constructors2024 %>% 
+    ungroup() %>% 
+    filter(round == round_no) %>% 
+    select(team, points, standings) %>% 
+    mutate(points = paste('+', points), 
+           position = row_number())
+  gt(Round, rowname_col = 'position')
+}
+
+GPName <- function(roundNo) {
+  paste0(Constructors2024[Constructors2024$round == roundNo,]$race[roundNo])
+}
+```
+:::
+
+::: {focus-on="cr-graphic"}
+## Round 1 - `r GPName(1)`
+
+The `r GPName(1)` didn't look like a promising start...
+
+`r Round(1)`
+:::
+
+::: {focus-on="cr-graphic"}
+# Round 2 - `r GPName(2)`
+
+`r Round(2)`
+:::
+
+::: {focus-on="'cr-graphic'"}
+## Round 3 - `r GPName(3)`
+
+After qualifying on pole, Verstappen looked likely to take a record-equalling 10th victory in a row.
+
+However, car problems lead to a surprise retirement on lap 5, opening the door to a 1-2 finish from Ferrari.
+
+`r Round(3)`
+:::
+
+Round 4 @cr-graphic
+
+Round 5 @cr-graphic
+
+Round 6 @cr-graphic
+
+Round 7 @cr-graphic
+
+Round 8 @cr-graphic
+
+Round 9 @cr-graphic
+
+Round 10 @cr-graphic
+
+Round 11 @cr-graphic
+
+Round 12 @cr-graphic
+:::
+:::
+
+```{=html}
+<!-- some quick style customisation: see https://closeread.dev/guide/styling -->
+<style>
+  .cr-section.overlay-left {
+    background-color: #ffffff;
+  }
+
+  .cr-section.overlay-left .narrative-col .narrative {
+    font-size: 1em;
+    background-color: #FFFFFF;
+    opacity: 1;
+    color: #000000;
+    padding: 0.6em 0.8em;
+    border-radius: 0;
+    border: 2px solid #000000;
+    box-shadow: 4px 4px 0px 0px #e6e6e6;
+    backdrop-filter: blur(10px);
+  }
+</style>
+```
