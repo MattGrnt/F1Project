@@ -10,8 +10,10 @@ website:
         text: Home
       - href: Local Stats.qmd
         text: Local stats
-      - OJS and D3.qmd
       - Animated D3 Graphs.qmd
+      - OJS and D3.qmd
+      - Scrolling Constructrs Season.qmd
+      
       - about.qmd
 
 format:
